@@ -1,0 +1,86 @@
+// QuizGenius AI — © Abiyyu Rafa Ramadhan
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  password     String
+  avatarEmoji  String    @default("🧠")
+  avatarColor  String    @default("#6366f1")
+  xp           Int       @default(0)
+  level        Int       @default(1)
+  totalScore   Int       @default(0)
+  totalSessions Int      @default(0)
+  bestStreak   Int       @default(0)
+  badges       String[]  @default([])
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  sessions     QuizSession[]
+  leaderboard  Leaderboard[]
+
+  @@index([xp])
+  @@index([totalScore])
+}
+
+model QuizSession {
+  id           String    @id @default(cuid())
+  userId       String
+  category     String    // school | utbk | tpa | skd
+  classLevel   String?   // 1–12 (untuk school)
+  subject      String?   // math, science, dll
+  subCategory  String?   // TPS, TWK, Verbal, dll
+  mode         String    // practice | exam
+  difficulty   Int       @default(1)
+  currentQ     Int       @default(0)
+  correct      Int       @default(0)
+  incorrect    Int       @default(0)
+  streak       Int       @default(0)
+  maxStreak    Int       @default(0)
+  score        Int       @default(0)
+  timeSpent    Int       @default(0)
+  xpEarned     Int       @default(0)
+  questions    Json
+  log          Json      @default("[]")
+  status       String    @default("active") // active | done | quit
+  finishedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  leaderboard  Leaderboard?
+
+  @@index([userId, status])
+  @@index([category, score])
+}
+
+model Leaderboard {
+  id           String    @id @default(cuid())
+  userId       String
+  sessionId    String    @unique
+  category     String
+  subCategory  String?
+  score        Int
+  correct      Int
+  total        Int
+  maxStreak    Int       @default(0)
+  accuracy     Float     @default(0)
+  timeSpent    Int       @default(0)
+  xpEarned     Int       @default(0)
+  createdAt    DateTime  @default(now())
+
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session      QuizSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([score])
+  @@index([category, score])
+  @@index([createdAt])
+}
