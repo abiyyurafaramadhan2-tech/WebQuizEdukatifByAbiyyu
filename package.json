@@ -1,0 +1,13 @@
+{
+  "name": "quizgenius-ai",
+  "version": "1.0.0",
+  "description": "Quiz AI Platform - © Abiyyu Rafa Ramadhan",
+  "scripts": {
+    "build": "cd frontend && npm install && npm run build",
+    "start": "node backend/src/index.js",
+    "postinstall": "npm install --prefix backend"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
