@@ -69,11 +69,12 @@ Aturan:
 
 async function callGemini(prompt) {
   const apiKey = process.env.GEMINI_API_KEY;
-  const model  = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+  const model  = process.env.GEMINI_MODEL || 'gemini-2.0-flash'; // ✅ FIX MODEL
 
   if (!apiKey) throw new Error('GEMINI_API_KEY belum diisi di environment variables');
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  // ✅ FIX ENDPOINT (v1, bukan v1beta)
+  const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`;
 
   const body = {
     contents: [{ parts: [{ text: prompt }] }],
@@ -95,7 +96,12 @@ async function callGemini(prompt) {
   }
 
   const data = await res.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+  // ✅ FIX parsing lebih kuat (anti error kosong)
+  const text =
+    data?.candidates?.[0]?.content?.parts?.map(p => p.text).join('') ||
+    '';
+
   if (!text) throw new Error('Gemini tidak mengembalikan teks');
   return text;
 }
@@ -136,7 +142,6 @@ function parseQuestions(raw, count) {
   try {
     data = JSON.parse(cleaned);
   } catch {
-    // Coba cari JSON di dalam teks
     const match = cleaned.match(/\{[\s\S]*\}/);
     if (!match) throw new Error('Tidak ada JSON valid dalam respons AI');
     data = JSON.parse(match[0]);
