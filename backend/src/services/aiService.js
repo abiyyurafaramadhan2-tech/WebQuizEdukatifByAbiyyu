@@ -53,20 +53,21 @@ Balas HANYA JSON: {"questions":[{"id":1,"question":"...","options":{"A":"...","B
 Aturan: Bahasa Indonesia, JSON valid saja.`;
 }
 
-// --- FUNGSI BARU: CALL OPENROUTER ---
 async function callOpenRouter(prompt) {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) throw new Error('OPENROUTER_API_KEY belum diisi');
+  // BERSIHKAN TANDA PETIK DARI RAILWAY
+  const apiKey = (process.env.OPENROUTER_API_KEY || '').replace(/['"]+/g, '').trim();
+  const model = (process.env.OPENROUTER_MODEL || 'google/gemini-2.0-flash-lite-preview-02-05:free').replace(/['"]+/g, '').trim();
+
+  if (!apiKey) throw new Error('OPENROUTER_API_KEY tidak terbaca (kosong)');
 
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
-      'HTTP-Referer': 'https://webquizbybiyu.up.railway.app', // Opsional
     },
     body: JSON.stringify({
-      model: process.env.OPENROUTER_MODEL || 'google/gemini-2.0-flash-lite-preview-02-05:free',
+      model: model,
       messages: [{ role: 'user', content: prompt }],
     }),
   });
@@ -81,9 +82,11 @@ async function callOpenRouter(prompt) {
 }
 
 async function callGemini(prompt) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  const model  = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+  const apiKey = (process.env.GEMINI_API_KEY || '').replace(/['"]+/g, '').trim();
+  const model  = (process.env.GEMINI_MODEL || 'gemini-2.0-flash').replace(/['"]+/g, '').trim();
+  
   if (!apiKey) throw new Error('GEMINI_API_KEY belum diisi');
+  
   const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`;
   const res = await fetch(url, {
     method: 'POST',
@@ -112,16 +115,15 @@ function parseQuestions(raw, count) {
 async function generateQuestions(params) {
   const count = params.count || parseInt(process.env.QUIZ_QUESTIONS_COUNT) || 20;
   const prompt = buildPrompt({ ...params, count });
-  const provider = process.env.AI_PROVIDER || 'gemini';
+  
+  // BERSIHKAN TANDA PETIK PADA PROVIDER
+  const provider = (process.env.AI_PROVIDER || 'gemini').replace(/['"]+/g, '').trim();
 
-  console.log(`[AI] Using Provider: ${provider}`);
+  console.log(`[AI Debug] Fix Aktif. Menggunakan Provider: ${provider}`);
 
   let raw;
   if (provider === 'openrouter') {
     raw = await callOpenRouter(prompt);
-  } else if (provider === 'openai') {
-    // Fungsi callOpenAI kamu tetap sama
-    raw = await callOpenAI(prompt); 
   } else {
     raw = await callGemini(prompt);
   }
@@ -131,7 +133,7 @@ async function generateQuestions(params) {
 
 async function explainWrong({ question, correct, wrong }) {
   const prompt = `Tutor AI lucu. Jelaskan singkat kenapa salah. Soal: ${question}, Benar: ${correct}, Jawaban siswa: ${wrong}. Max 2 kalimat + emoji.`;
-  const provider = process.env.AI_PROVIDER || 'gemini';
+  const provider = (process.env.AI_PROVIDER || 'gemini').replace(/['"]+/g, '').trim();
   try {
     const raw = provider === 'openrouter' ? await callOpenRouter(prompt) : await callGemini(prompt);
     return raw.trim();
@@ -141,4 +143,3 @@ async function explainWrong({ question, correct, wrong }) {
 }
 
 module.exports = { generateQuestions, explainWrong, CATEGORY_META };
-    
