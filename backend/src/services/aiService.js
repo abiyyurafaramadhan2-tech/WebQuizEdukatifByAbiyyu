@@ -1,181 +1,206 @@
 // QuizGenius AI Service — © Abiyyu Rafa Ramadhan
-const { GoogleGenerativeAI } = require('@google/generative-ai');
-const fetch = require('node-fetch');
-const cfg   = require('../config/config');
 
-// ── Kategori metadata ───────────────────────────────
 const CATEGORY_META = {
   school: {
     subjects: {
-      math:       { id: 'Matematika',       en: 'Mathematics'      },
-      science:    { id: 'IPA',              en: 'Natural Science'   },
-      social:     { id: 'IPS',              en: 'Social Studies'    },
-      indonesian: { id: 'Bahasa Indonesia', en: 'Indonesian'        },
-      english:    { id: 'Bahasa Inggris',   en: 'English'           },
-      history:    { id: 'Sejarah',          en: 'History'           },
-      civics:     { id: 'PKN',              en: 'Civic Education'   },
-      biology:    { id: 'Biologi',          en: 'Biology'           },
-      chemistry:  { id: 'Kimia',            en: 'Chemistry'         },
-      physics:    { id: 'Fisika',           en: 'Physics'           },
-      economics:  { id: 'Ekonomi',          en: 'Economics'         },
-      geography:  { id: 'Geografi',         en: 'Geography'         },
+      math:'Matematika', science:'IPA', social:'IPS',
+      indonesian:'Bahasa Indonesia', english:'Bahasa Inggris',
+      history:'Sejarah', civics:'PKN', biology:'Biologi',
+      chemistry:'Kimia', physics:'Fisika',
+      economics:'Ekonomi', geography:'Geografi',
     },
   },
   utbk: {
     subCategories: {
-      TPS:      'Tes Potensi Skolastik UTBK',
-      Literasi: 'Literasi UTBK (Bahasa Indonesia & Inggris)',
+      TPS:'Tes Potensi Skolastik UTBK',
+      Literasi:'Literasi UTBK',
       Penalaran:'Penalaran Matematika UTBK',
     },
   },
   tpa: {
     subCategories: {
-      Verbal:  'TPA Verbal (sinonim, antonim, analogi)',
-      Numerik: 'TPA Numerik (deret, aritmatika, perbandingan)',
-      Logika:  'TPA Logika (silogisme, analitik, deduksi)',
-      Spasial: 'TPA Spasial (gambar, pola, rotasi)',
+      Verbal:'TPA Verbal',
+      Numerik:'TPA Numerik',
+      Logika:'TPA Logika',
+      Spasial:'TPA Spasial',
     },
   },
   skd: {
     subCategories: {
-      TWK: 'TWK CPNS (wawasan kebangsaan, Pancasila, UUD 1945)',
-      TIU: 'TIU CPNS (verbal, numerik, figural)',
-      TKP: 'TKP CPNS (pelayanan publik, integritas, etika)',
+      TWK:'TWK CPNS',
+      TIU:'TIU CPNS',
+      TKP:'TKP CPNS',
     },
   },
 };
 
-// ── Build prompt ────────────────────────────────────
 function buildPrompt({ category, classLevel, subject, subCategory, difficulty, count }) {
   let context = '';
-
   if (category === 'school') {
-    const subName = CATEGORY_META.school.subjects[subject]?.id || subject;
-    context = `Mata pelajaran ${subName} untuk kelas ${classLevel} SD/SMP/SMA Indonesia (Kurikulum Merdeka).`;
+    const name = CATEGORY_META.school.subjects[subject] || subject;
+    context = `${name} kelas ${classLevel} (Kurikulum Merdeka Indonesia)`;
   } else if (category === 'utbk') {
-    context = `${CATEGORY_META.utbk.subCategories[subCategory] || subCategory} - persiapan SNBT/UTBK untuk masuk PTN.`;
+    context = CATEGORY_META.utbk.subCategories[subCategory] || subCategory;
   } else if (category === 'tpa') {
-    context = `${CATEGORY_META.tpa.subCategories[subCategory] || subCategory} - soal TPA standar tes masuk perusahaan/kampus.`;
+    context = CATEGORY_META.tpa.subCategories[subCategory] || subCategory;
   } else if (category === 'skd') {
-    context = `${CATEGORY_META.skd.subCategories[subCategory] || subCategory} - soal SKD CPNS standar BKN.`;
+    context = CATEGORY_META.skd.subCategories[subCategory] || subCategory;
   }
 
   const diffMap = {
-    1: 'mudah (konsep dasar, definisi, hafalan)',
-    2: 'sedang (pemahaman, penerapan, analisis ringan)',
-    3: 'sulit (analitis mendalam, multi-langkah, kritis)',
+    1: 'mudah, konsep dasar',
+    2: 'sedang, perlu pemahaman',
+    3: 'sulit, analitis',
   };
-  const diffText = diffMap[difficulty] || diffMap[1];
 
-  return `Kamu adalah pembuat soal ahli. Buat ${count} soal pilihan ganda (MCQ) untuk:
-Konteks: ${context}
-Tingkat kesulitan: ${diffText}
+  return `Buat ${count} soal pilihan ganda untuk: ${context}
+Tingkat: ${diffMap[difficulty] || diffMap[1]}
 
-WAJIB balas HANYA dengan JSON valid ini, tanpa teks lain, tanpa markdown:
-{"questions":[{"id":1,"question":"Teks soal?","options":{"A":"opsi A","B":"opsi B","C":"opsi C","D":"opsi D"},"correct":"B","explanation":"Penjelasan singkat mengapa B benar.","topic":"topik soal"}]}
+Balas HANYA JSON ini tanpa teks lain:
+{"questions":[{"id":1,"question":"...","options":{"A":"...","B":"...","C":"...","D":"..."},"correct":"B","explanation":"...","topic":"..."}]}
 
-ATURAN PENTING:
-- Buat tepat ${count} soal berbeda topiknya
-- Semua pilihan harus masuk akal (tidak ada yang jelas salah)
-- Kunci jawaban tersebar (tidak selalu A atau B)
-- Bahasa Indonesia yang benar
-- Penjelasan singkat dan jelas (1-2 kalimat)
-- Untuk ${category === 'skd' ? 'TKP: soal berupa situasi kerja dengan jawaban terbaik' : 'soal berbasis materi standar'}
-- JSON valid saja, TIDAK ADA teks di luar JSON`;
+Aturan:
+- Tepat ${count} soal berbeda
+- Bahasa Indonesia
+- Semua pilihan masuk akal
+- Kunci jawaban bervariasi (bukan selalu A)
+- JSON valid saja`;
 }
 
-// ── Gemini call ─────────────────────────────────────
-async function callGemini(prompt, maxTokens = 4096) {
-  const genAI = new GoogleGenerativeAI(cfg.ai.geminiKey);
-  const model = genAI.getGenerativeModel({
-    model: cfg.ai.geminiModel,
-    generationConfig: { maxOutputTokens: maxTokens, temperature: 0.7 },
+async function callGemini(prompt) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  const model  = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+
+  if (!apiKey) throw new Error('GEMINI_API_KEY belum diisi di environment variables');
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+  const body = {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: {
+      temperature:      0.7,
+      maxOutputTokens:  4096,
+    },
+  };
+
+  const res = await fetch(url, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(body),
   });
-  const result = await model.generateContent(prompt);
-  return result.response.text();
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Gemini API error ${res.status}: ${errText}`);
+  }
+
+  const data = await res.json();
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error('Gemini tidak mengembalikan teks');
+  return text;
 }
 
-// ── OpenAI call ─────────────────────────────────────
-async function callOpenAI(prompt, maxTokens = 4096) {
-  const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+async function callOpenAI(prompt) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error('OPENAI_API_KEY belum diisi');
+
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${cfg.ai.openaiKey}`,
       'Content-Type':  'application/json',
+      'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model:      cfg.ai.openaiModel,
+      model:      process.env.OPENAI_MODEL || 'gpt-4o-mini',
       messages:   [{ role: 'user', content: prompt }],
-      max_tokens: maxTokens,
+      max_tokens: 4096,
     }),
   });
-  if (!resp.ok) throw new Error(`OpenAI error: ${resp.status}`);
-  const data = await resp.json();
-  return data.choices[0].message.content;
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`OpenAI API error ${res.status}: ${errText}`);
+  }
+
+  const data = await res.json();
+  return data?.choices?.[0]?.message?.content || '';
 }
 
-// ── Parse JSON response ─────────────────────────────
 function parseQuestions(raw, count) {
-  const cleaned = raw.replace(/```json|```/g, '').trim();
-  const data    = JSON.parse(cleaned);
+  const cleaned = raw
+    .replace(/```json/g, '')
+    .replace(/```/g, '')
+    .trim();
+
+  let data;
+  try {
+    data = JSON.parse(cleaned);
+  } catch {
+    // Coba cari JSON di dalam teks
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('Tidak ada JSON valid dalam respons AI');
+    data = JSON.parse(match[0]);
+  }
 
   if (!data.questions || !Array.isArray(data.questions)) {
-    throw new Error('AI tidak menghasilkan format yang benar');
+    throw new Error('Format JSON tidak sesuai');
   }
 
   return data.questions.slice(0, count).map((q, i) => ({
     id:          i + 1,
-    question:    String(q.question || `Soal ${i + 1}`),
-    options:     {
+    question:    String(q.question   || `Soal ${i + 1}`),
+    options: {
       A: String(q.options?.A || 'Pilihan A'),
       B: String(q.options?.B || 'Pilihan B'),
       C: String(q.options?.C || 'Pilihan C'),
       D: String(q.options?.D || 'Pilihan D'),
     },
-    correct:     String(q.correct || 'A').toUpperCase(),
+    correct:     String(q.correct    || 'A').toUpperCase(),
     explanation: String(q.explanation || ''),
-    topic:       String(q.topic || ''),
+    topic:       String(q.topic       || ''),
     answered:    null,
     isCorrect:   null,
   }));
 }
 
-// ── Main export ─────────────────────────────────────
 async function generateQuestions(params) {
-  const count  = params.count || cfg.quiz.questionsCount;
-  const prompt = buildPrompt({ ...params, count });
+  const count    = params.count || parseInt(process.env.QUIZ_QUESTIONS_COUNT) || 20;
+  const prompt   = buildPrompt({ ...params, count });
+  const provider = process.env.AI_PROVIDER || 'gemini';
+
+  console.log(`[AI] Generate ${count} soal - provider: ${provider} - category: ${params.category}`);
 
   let raw;
-  if (cfg.ai.provider === 'openai') {
-    raw = await callOpenAI(prompt);
-  } else {
-    raw = await callGemini(prompt);
+  try {
+    raw = provider === 'openai'
+      ? await callOpenAI(prompt)
+      : await callGemini(prompt);
+  } catch (err) {
+    console.error('[AI] Error:', err.message);
+    throw err;
   }
 
-  return parseQuestions(raw, count);
+  const questions = parseQuestions(raw, count);
+  console.log(`[AI] Berhasil generate ${questions.length} soal`);
+  return questions;
 }
 
 async function explainWrong({ question, correct, wrong }) {
-  const prompt = `Kamu adalah tutor AI yang lucu dan menyemangati.
-Seorang siswa menjawab salah pada soal berikut:
+  const prompt = `Kamu tutor AI yang lucu. Siswa menjawab salah:
 Soal: ${question}
-Jawaban benar: ${correct}
+Benar: ${correct}
 Jawaban siswa: ${wrong}
 
-Tulis penjelasan 2-3 kalimat dalam Bahasa Indonesia yang kasual:
-1. Hibur siswa dengan santai
-2. Jelaskan kenapa "${correct}" benar dengan analogi mudah dipahami
-3. Akhiri dengan kalimat semangat + 1 emoji lucu
-
-Teks biasa saja, tanpa markdown.`;
+Tulis 2 kalimat penjelasan Bahasa Indonesia kasual + emoji semangat. Teks biasa saja.`;
 
   try {
-    const raw = cfg.ai.provider === 'openai'
-      ? await callOpenAI(prompt, 300)
-      : await callGemini(prompt, 300);
+    const provider = process.env.AI_PROVIDER || 'gemini';
+    const raw = provider === 'openai'
+      ? await callOpenAI(prompt)
+      : await callGemini(prompt);
     return raw.trim();
   } catch {
-    return `Hampir! Jawaban yang benar adalah: "${correct}". Tetap semangat belajar ya! 💪`;
+    return `Hampir! Jawaban benarnya: "${correct}". Tetap semangat! 💪`;
   }
 }
 
