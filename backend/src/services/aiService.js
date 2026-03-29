@@ -17,14 +17,12 @@ const CATEGORY_META = {
 };
 
 async function callOpenRouter(prompt) {
-  // Ambil API Key & bersihkan dari tanda petik sisa Railway
+  // Buka gembok! Sekarang dia baca dari Railway, bukan di-hardcode lagi.
   const apiKey = (process.env.OPENROUTER_API_KEY || '').replace(/['"]+/g, '').trim();
-  
-  // PAKSA MODEL DISINI (HARDCODE) agar tidak ada error "Invalid Model ID" lagi
-  const model = "google/gemini-2.0-flash-lite-preview-02-05:free";
+  const model = (process.env.OPENROUTER_MODEL || 'google/gemini-2.0-flash-lite:free').replace(/['"]+/g, '').trim();
 
   console.log(`[DEBUG] Mengirim request ke OpenRouter...`);
-  console.log(`[DEBUG] Model: ${model}`);
+  console.log(`[DEBUG] Model yang dipakai: ${model}`);
 
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: 'POST',
@@ -44,7 +42,7 @@ async function callOpenRouter(prompt) {
   const data = await res.json();
   
   if (!res.ok) {
-    console.error("[DEBUG] OpenRouter Error:", JSON.stringify(data));
+    console.error("[DEBUG] OpenRouter Error Response:", JSON.stringify(data));
     throw new Error(data?.error?.message || `HTTP_${res.status}`);
   }
 
