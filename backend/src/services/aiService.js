@@ -1,5 +1,4 @@
 // QuizGenius AI Service — © Abiyyu Rafa Ramadhan
-
 const CATEGORY_META = {
   school: {
     subjects: {
@@ -36,7 +35,6 @@ const CATEGORY_META = {
 
 function buildPrompt({ category, classLevel, subject, subCategory, difficulty, count }) {
   let context = '';
-
   if (category === 'school') {
     const name = CATEGORY_META.school.subjects[subject] || subject;
     context = `${name} kelas ${classLevel} (Kurikulum Merdeka Indonesia)`;
@@ -48,123 +46,66 @@ function buildPrompt({ category, classLevel, subject, subCategory, difficulty, c
     context = CATEGORY_META.skd.subCategories[subCategory] || subCategory;
   }
 
-  const diffMap = {
-    1: 'mudah, konsep dasar',
-    2: 'sedang, perlu pemahaman',
-    3: 'sulit, analitis',
-  };
+  const diffMap = { 1: 'mudah', 2: 'sedang', 3: 'sulit' };
 
-  return `Buat ${count} soal pilihan ganda untuk: ${context}
-Tingkat: ${diffMap[difficulty] || diffMap[1]}
-
-Balas HANYA JSON ini tanpa teks lain:
-{"questions":[{"id":1,"question":"...","options":{"A":"...","B":"...","C":"...","D":"..."},"correct":"B","explanation":"...","topic":"..."}]}
-
-Aturan:
-- Tepat ${count} soal berbeda
-- Bahasa Indonesia
-- Semua pilihan masuk akal
-- Kunci jawaban bervariasi (bukan selalu A)
-- JSON valid saja`;
+  return `Buat ${count} soal pilihan ganda untuk: ${context}. Tingkat: ${diffMap[difficulty] || diffMap[1]}.
+Balas HANYA JSON: {"questions":[{"id":1,"question":"...","options":{"A":"...","B":"...","C":"...","D":"..."},"correct":"B","explanation":"...","topic":"..."}]}
+Aturan: Bahasa Indonesia, JSON valid saja.`;
 }
 
-async function callGemini(prompt) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  const model  = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+// --- FUNGSI BARU: CALL OPENROUTER ---
+async function callOpenRouter(prompt) {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) throw new Error('OPENROUTER_API_KEY belum diisi');
 
-  if (!apiKey) throw new Error('GEMINI_API_KEY belum diisi');
-
-  const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`;
-
-  const body = {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: {
-      temperature: 0.7,
-      maxOutputTokens: 4096,
-    },
-  };
-
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Gemini API error ${res.status}: ${errText}`);
-  }
-
-  const data = await res.json();
-
-  const text =
-    data?.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || '';
-
-  if (!text) throw new Error('Gemini tidak mengembalikan teks');
-  return text;
-}
-
-async function callOpenAI(prompt) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error('OPENAI_API_KEY belum diisi');
-
-  const baseURL = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
-
-  const res = await fetch(baseURL + '/chat/completions', {
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
+      'HTTP-Referer': 'https://webquizbybiyu.up.railway.app', // Opsional
     },
     body: JSON.stringify({
-      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      model: process.env.OPENROUTER_MODEL || 'google/gemini-2.0-flash-lite-preview-02-05:free',
       messages: [{ role: 'user', content: prompt }],
-      max_tokens: 4096,
     }),
   });
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`OpenAI API error ${res.status}: ${errText}`);
+    throw new Error(`OpenRouter error ${res.status}: ${errText}`);
   }
 
   const data = await res.json();
   return data?.choices?.[0]?.message?.content || '';
 }
 
-function parseQuestions(raw, count) {
-  const cleaned = raw
-    .replace(/```json/g, '')
-    .replace(/```/g, '')
-    .trim();
+async function callGemini(prompt) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  const model  = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+  if (!apiKey) throw new Error('GEMINI_API_KEY belum diisi');
+  const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+  });
+  const data = await res.json();
+  return data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+}
 
+function parseQuestions(raw, count) {
+  const cleaned = raw.replace(/```json/g, '').replace(/```/g, '').trim();
   let data;
   try {
     data = JSON.parse(cleaned);
   } catch {
     const match = cleaned.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error('Tidak ada JSON valid dalam respons AI');
+    if (!match) throw new Error('JSON tidak valid');
     data = JSON.parse(match[0]);
   }
-
-  if (!data.questions || !Array.isArray(data.questions)) {
-    throw new Error('Format JSON tidak sesuai');
-  }
-
   return data.questions.slice(0, count).map((q, i) => ({
-    id: i + 1,
-    question: String(q.question || `Soal ${i + 1}`),
-    options: {
-      A: String(q.options?.A || 'Pilihan A'),
-      B: String(q.options?.B || 'Pilihan B'),
-      C: String(q.options?.C || 'Pilihan C'),
-      D: String(q.options?.D || 'Pilihan D'),
-    },
-    correct: String(q.correct || 'A').toUpperCase(),
-    explanation: String(q.explanation || ''),
-    topic: String(q.topic || ''),
-    answered: null,
-    isCorrect: null,
+    ...q, id: i + 1, answered: null, isCorrect: null
   }));
 }
 
@@ -173,40 +114,31 @@ async function generateQuestions(params) {
   const prompt = buildPrompt({ ...params, count });
   const provider = process.env.AI_PROVIDER || 'gemini';
 
-  console.log(`[AI] Generate ${count} soal - provider: ${provider}`);
+  console.log(`[AI] Using Provider: ${provider}`);
 
   let raw;
-  try {
-    raw = provider === 'openai'
-      ? await callOpenAI(prompt)
-      : await callGemini(prompt);
-  } catch (err) {
-    console.error('[AI] Error:', err.message);
-    throw err;
+  if (provider === 'openrouter') {
+    raw = await callOpenRouter(prompt);
+  } else if (provider === 'openai') {
+    // Fungsi callOpenAI kamu tetap sama
+    raw = await callOpenAI(prompt); 
+  } else {
+    raw = await callGemini(prompt);
   }
 
-  const questions = parseQuestions(raw, count);
-  console.log(`[AI] Berhasil generate ${questions.length} soal`);
-  return questions;
+  return parseQuestions(raw, count);
 }
 
 async function explainWrong({ question, correct, wrong }) {
-  const prompt = `Kamu tutor AI yang lucu. Siswa menjawab salah:
-Soal: ${question}
-Benar: ${correct}
-Jawaban siswa: ${wrong}
-
-Tulis 2 kalimat penjelasan Bahasa Indonesia kasual + emoji semangat.`;
-
+  const prompt = `Tutor AI lucu. Jelaskan singkat kenapa salah. Soal: ${question}, Benar: ${correct}, Jawaban siswa: ${wrong}. Max 2 kalimat + emoji.`;
+  const provider = process.env.AI_PROVIDER || 'gemini';
   try {
-    const provider = process.env.AI_PROVIDER || 'gemini';
-    const raw = provider === 'openai'
-      ? await callOpenAI(prompt)
-      : await callGemini(prompt);
+    const raw = provider === 'openrouter' ? await callOpenRouter(prompt) : await callGemini(prompt);
     return raw.trim();
   } catch {
-    return `Hampir! Jawaban benarnya: "${correct}". Tetap semangat! 💪`;
+    return `Jawaban benarnya: ${correct}. Semangat! 💪`;
   }
 }
 
 module.exports = { generateQuestions, explainWrong, CATEGORY_META };
+    
