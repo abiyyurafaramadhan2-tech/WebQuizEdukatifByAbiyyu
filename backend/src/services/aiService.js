@@ -36,6 +36,7 @@ const CATEGORY_META = {
 
 function buildPrompt({ category, classLevel, subject, subCategory, difficulty, count }) {
   let context = '';
+
   if (category === 'school') {
     const name = CATEGORY_META.school.subjects[subject] || subject;
     context = `${name} kelas ${classLevel} (Kurikulum Merdeka Indonesia)`;
@@ -69,25 +70,24 @@ Aturan:
 
 async function callGemini(prompt) {
   const apiKey = process.env.GEMINI_API_KEY;
-  const model  = process.env.GEMINI_MODEL || 'gemini-2.0-flash'; // ✅ FIX MODEL
+  const model  = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
 
-  if (!apiKey) throw new Error('GEMINI_API_KEY belum diisi di environment variables');
+  if (!apiKey) throw new Error('GEMINI_API_KEY belum diisi');
 
-  // ✅ FIX ENDPOINT (v1, bukan v1beta)
   const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`;
 
   const body = {
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: {
-      temperature:      0.7,
-      maxOutputTokens:  4096,
+      temperature: 0.7,
+      maxOutputTokens: 4096,
     },
   };
 
   const res = await fetch(url, {
-    method:  'POST',
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(body),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
@@ -97,10 +97,8 @@ async function callGemini(prompt) {
 
   const data = await res.json();
 
-  // ✅ FIX parsing lebih kuat (anti error kosong)
   const text =
-    data?.candidates?.[0]?.content?.parts?.map(p => p.text).join('') ||
-    '';
+    data?.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || '';
 
   if (!text) throw new Error('Gemini tidak mengembalikan teks');
   return text;
@@ -110,15 +108,17 @@ async function callOpenAI(prompt) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('OPENAI_API_KEY belum diisi');
 
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+  const baseURL = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
+
+  const res = await fetch(baseURL + '/chat/completions', {
     method: 'POST',
     headers: {
-      'Content-Type':  'application/json',
+      'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model:      process.env.OPENAI_MODEL || 'gpt-4o-mini',
-      messages:   [{ role: 'user', content: prompt }],
+      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      messages: [{ role: 'user', content: prompt }],
       max_tokens: 4096,
     }),
   });
@@ -152,28 +152,28 @@ function parseQuestions(raw, count) {
   }
 
   return data.questions.slice(0, count).map((q, i) => ({
-    id:          i + 1,
-    question:    String(q.question   || `Soal ${i + 1}`),
+    id: i + 1,
+    question: String(q.question || `Soal ${i + 1}`),
     options: {
       A: String(q.options?.A || 'Pilihan A'),
       B: String(q.options?.B || 'Pilihan B'),
       C: String(q.options?.C || 'Pilihan C'),
       D: String(q.options?.D || 'Pilihan D'),
     },
-    correct:     String(q.correct    || 'A').toUpperCase(),
+    correct: String(q.correct || 'A').toUpperCase(),
     explanation: String(q.explanation || ''),
-    topic:       String(q.topic       || ''),
-    answered:    null,
-    isCorrect:   null,
+    topic: String(q.topic || ''),
+    answered: null,
+    isCorrect: null,
   }));
 }
 
 async function generateQuestions(params) {
-  const count    = params.count || parseInt(process.env.QUIZ_QUESTIONS_COUNT) || 20;
-  const prompt   = buildPrompt({ ...params, count });
+  const count = params.count || parseInt(process.env.QUIZ_QUESTIONS_COUNT) || 20;
+  const prompt = buildPrompt({ ...params, count });
   const provider = process.env.AI_PROVIDER || 'gemini';
 
-  console.log(`[AI] Generate ${count} soal - provider: ${provider} - category: ${params.category}`);
+  console.log(`[AI] Generate ${count} soal - provider: ${provider}`);
 
   let raw;
   try {
@@ -196,7 +196,7 @@ Soal: ${question}
 Benar: ${correct}
 Jawaban siswa: ${wrong}
 
-Tulis 2 kalimat penjelasan Bahasa Indonesia kasual + emoji semangat. Teks biasa saja.`;
+Tulis 2 kalimat penjelasan Bahasa Indonesia kasual + emoji semangat.`;
 
   try {
     const provider = process.env.AI_PROVIDER || 'gemini';
