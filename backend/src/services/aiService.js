@@ -54,11 +54,10 @@ Aturan: Bahasa Indonesia, JSON valid saja.`;
 }
 
 async function callOpenRouter(prompt) {
-  // BERSIHKAN TANDA PETIK DARI RAILWAY
   const apiKey = (process.env.OPENROUTER_API_KEY || '').replace(/['"]+/g, '').trim();
   const model = (process.env.OPENROUTER_MODEL || 'google/gemini-2.0-flash-lite-preview-02-05:free').replace(/['"]+/g, '').trim();
 
-  if (!apiKey) throw new Error('OPENROUTER_API_KEY tidak terbaca (kosong)');
+  if (!apiKey) throw new Error('API Key OpenRouter kosong. Cek Railway Variables!');
 
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: 'POST',
@@ -74,18 +73,20 @@ async function callOpenRouter(prompt) {
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`OpenRouter error ${res.status}: ${errText}`);
+    throw new Error(`OpenRouter Error ${res.status}: ${errText}`);
   }
 
   const data = await res.json();
-  return data?.choices?.[0]?.message?.content || '';
+  const content = data?.choices?.[0]?.message?.content || '';
+  if (!content) throw new Error('OpenRouter tidak mengembalikan teks soal.');
+  return content;
 }
 
 async function callGemini(prompt) {
   const apiKey = (process.env.GEMINI_API_KEY || '').replace(/['"]+/g, '').trim();
   const model  = (process.env.GEMINI_MODEL || 'gemini-2.0-flash').replace(/['"]+/g, '').trim();
   
-  if (!apiKey) throw new Error('GEMINI_API_KEY belum diisi');
+  if (!apiKey) throw new Error('API Key Gemini kosong.');
   
   const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`;
   const res = await fetch(url, {
@@ -93,6 +94,7 @@ async function callGemini(prompt) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
   });
+  
   const data = await res.json();
   return data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
 }
@@ -102,37 +104,46 @@ function parseQuestions(raw, count) {
   let data;
   try {
     data = JSON.parse(cleaned);
-  } catch {
+  } catch (e) {
     const match = cleaned.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error('JSON tidak valid');
+    if (!match) throw new Error('AI tidak memberikan format JSON yang benar.');
     data = JSON.parse(match[0]);
   }
   return data.questions.slice(0, count).map((q, i) => ({
-    ...q, id: i + 1, answered: null, isCorrect: null
+    ...q, 
+    id: i + 1, 
+    answered: null, 
+    isCorrect: null,
+    options: q.options || { A: '?', B: '?', C: '?', D: '?' }
   }));
 }
 
 async function generateQuestions(params) {
-  const count = params.count || parseInt(process.env.QUIZ_QUESTIONS_COUNT) || 20;
-  const prompt = buildPrompt({ ...params, count });
-  
-  // BERSIHKAN TANDA PETIK PADA PROVIDER
-  const provider = (process.env.AI_PROVIDER || 'gemini').replace(/['"]+/g, '').trim();
+  try {
+    const count = params.count || parseInt(process.env.QUIZ_QUESTIONS_COUNT) || 20;
+    const prompt = buildPrompt({ ...params, count });
+    
+    // Cuci bersih petik dari Railway
+    const provider = (process.env.AI_PROVIDER || 'gemini').replace(/['"]+/g, '').trim();
 
-  console.log(`[AI Debug] Fix Aktif. Menggunakan Provider: ${provider}`);
+    console.log(`[AI] Memulai generate dengan provider: ${provider}`);
 
-  let raw;
-  if (provider === 'openrouter') {
-    raw = await callOpenRouter(prompt);
-  } else {
-    raw = await callGemini(prompt);
+    let raw;
+    if (provider === 'openrouter') {
+      raw = await callOpenRouter(prompt);
+    } else {
+      raw = await callGemini(prompt);
+    }
+
+    return parseQuestions(raw, count);
+  } catch (err) {
+    console.error('[AI FATAL ERROR]:', err.message);
+    throw err;
   }
-
-  return parseQuestions(raw, count);
 }
 
 async function explainWrong({ question, correct, wrong }) {
-  const prompt = `Tutor AI lucu. Jelaskan singkat kenapa salah. Soal: ${question}, Benar: ${correct}, Jawaban siswa: ${wrong}. Max 2 kalimat + emoji.`;
+  const prompt = `Jelaskan singkat kenapa salah. Soal: ${question}, Benar: ${correct}, Jawaban siswa: ${wrong}. Max 2 kalimat.`;
   const provider = (process.env.AI_PROVIDER || 'gemini').replace(/['"]+/g, '').trim();
   try {
     const raw = provider === 'openrouter' ? await callOpenRouter(prompt) : await callGemini(prompt);
